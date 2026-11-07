@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+cache.json
+status.json
+dashboard.png
+*.tmp
+*.tmp.png
+preview.png
+.venv/

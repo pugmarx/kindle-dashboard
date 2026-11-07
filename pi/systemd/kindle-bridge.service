@@ -1,0 +1,13 @@
+# Pi: /etc/systemd/system/kindle-bridge.service
+[Unit]
+Description=MQTT to file bridge for Kindle
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/bin/sh -c 'mosquitto_sub -h localhost -t environment/latest | while read -r line; do echo "$line" > /opt/kindle-feed/status.tmp && mv /opt/kindle-feed/status.tmp /opt/kindle-feed/status.json; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

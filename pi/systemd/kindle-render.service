@@ -1,0 +1,12 @@
+# Pi: /etc/systemd/system/kindle-render.service
+[Unit]
+Description=Render Kindle dashboard
+After=kindle-bridge.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/kindle-feed/render.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
