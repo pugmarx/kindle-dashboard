@@ -8,19 +8,29 @@ The bottom-left corner takes turns between the calendar and tech news every few 
 
 ![Tech news view](docs/preview-news.png)
 
+## System Architecture
+
+![System Architecture](docs/system-architecture.png)
+
+### Hardware & Sensor Wiring
+
+![Arduino Sensor Wiring](docs/arduino-schematic.png)
+
 ## How it works
 
 The Kindle does almost nothing. It just downloads a picture every 30 seconds and puts it on the screen. All the real work happens on a Raspberry Pi.
 
-My ESP8266 already publishes its readings over MQTT to a Mosquitto broker on the Pi, as a small JSON message on the topic `environment/latest`:
-
-```
-{"temp": 30, "hum": 41, "light": 204, "motion": 0}
-```
-
-On the Pi, three small services run in the background. `kindle-bridge` listens to that topic and saves the latest message to a file. `kindle-render` is a Python script that draws the whole dashboard as a grayscale PNG every 30 seconds, mixing in the sensor data with weather, air quality and headlines it fetches from the internet. `kindle-web` serves that PNG over HTTP on port 8080.
-
-On the Kindle, a shell script fetches the PNG with `curl` and draws it with FBInk. Because the Pi does all the drawing, changing the layout never means touching the Kindle again.
+1. **Sensing Tier (Arduino)**: Reads the DHT11 (temp/humidity), PIR (motion), and LDR (light) every 2 seconds, and listens for tactile button presses on pin 13 (`INPUT_PULLUP`). Emits JSON over USB serial (`/dev/ttyACM0`).
+2. **Processing Tier (Raspberry Pi)**:
+   - `serial_to_influx`: Reads serial, publishes button presses instantly to MQTT `environment/button`, and logs time-series data to InfluxDB.
+   - `push_to_mqtt`: Pulls from InfluxDB every 5s and publishes to MQTT `environment/latest`.
+   - `kindle-bridge`: Saves the latest MQTT telemetry to `/opt/kindle-feed/status.json`.
+   - `kindle-render`: Background renderer that cycles through three views when the physical button is pressed:
+     - **Main Dashboard**: Sensors, clock, weather, moon phase, and calendar.
+     - **Tech News Reader**: Top Hacker News stories with scannable QR codes on the right.
+     - **AI Digest**: Top AI stories with full context paragraphs from Ars Technica/VentureBeat + QR codes.
+   - `kindle-web`: Serves the rendered PNG over HTTP on port 8080.
+3. **Display Tier (Kindle)**: A shell loop fetches the image with `curl` and draws it to the e-ink screen using FBInk.
 
 ## What's in here
 
@@ -30,11 +40,13 @@ kindle/
   sensor_start.sh    tap this in the Kindle library to start
   sensor_stop.sh     tap this to stop
 pi/
-  render.py          draws the dashboard
-  systemd/           the three service files
+  render.py          draws the dashboard & reader views
+  persist_sensor_data.py  reads Arduino serial, publishes button to MQTT, logs to InfluxDB
+  systemd/           service definitions
 tools/
   preview.py         renders the dashboard locally with sample data
-docs/                screenshots
+  draw_schematics.py generates the architecture and wiring PNG schematics
+docs/                screenshots, schematics and preview images
 NOTES.md             where things stand and ideas for later
 AGENTS.md            background for coding agents working on this
 ```
