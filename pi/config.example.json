@@ -1,0 +1,10 @@
+{
+  "lat": 51.5074,
+  "lon": -0.1278,
+  "place": "London",
+  "rotate": 90,
+  "night_from": 21,
+  "night_to": 7,
+  "light_dim": 20,
+  "light_bright": 120
+}

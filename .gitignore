@@ -7,4 +7,5 @@ dashboard.png
 *.tmp
 *.tmp.png
 preview.png
+config.json
 .venv/

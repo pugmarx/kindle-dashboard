@@ -10,11 +10,29 @@ DIR = "/opt/kindle-feed/"
 SRC = DIR + "status.json"
 OUT = DIR + "dashboard.png"
 CACHE = DIR + "cache.json"
-LAT, LON, PLACE = 18.457, 73.917, "Undri"
+CONFIG_FILE = DIR + "config.json"
+
+# Default settings (can be overridden in /opt/kindle-feed/config.json)
+LAT, LON, PLACE = 51.5074, -0.1278, "London"
 ROTATE = 90          # change to 270 if the dashboard appears upside down
 NIGHT_FROM, NIGHT_TO = 21, 7   # show inverted (white on black) between these hours
 SHIFT = 3                      # pixels to nudge the layout each hour
 LIGHT_DIM, LIGHT_BRIGHT = 20, 120   # light sensor: below DIM = Dark, above BRIGHT = Bright
+
+try:
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE) as _cf:
+            _cfg = json.load(_cf)
+            LAT = _cfg.get("lat", LAT)
+            LON = _cfg.get("lon", LON)
+            PLACE = _cfg.get("place", PLACE)
+            ROTATE = _cfg.get("rotate", ROTATE)
+            if "night_from" in _cfg and "night_to" in _cfg:
+                NIGHT_FROM, NIGHT_TO = _cfg["night_from"], _cfg["night_to"]
+            LIGHT_DIM = _cfg.get("light_dim", LIGHT_DIM)
+            LIGHT_BRIGHT = _cfg.get("light_bright", LIGHT_BRIGHT)
+except Exception:
+    pass
 
 # Fonts: uses a rounded font (Nunito) if its files are in /opt/kindle-feed/fonts/,
 # otherwise falls back to the built-in DejaVu Sans.
