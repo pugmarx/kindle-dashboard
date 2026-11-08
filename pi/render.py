@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Env Monitor dashboard for a Kindle Paperwhite 2 (landscape).
 # Runs on the Raspberry Pi and writes /opt/kindle-feed/dashboard.png every 30 s.
-import calendar, json, math, os, sys, threading, time, urllib.parse, urllib.request
+import calendar, json, math, os, re, sys, threading, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -78,6 +78,14 @@ def fit(d, text, f, width):
     while text and text_size(d, text + "…", f)[0] > width:
         text = text[:-1]
     return text.rstrip() + "…"
+
+def strip_html(text):
+    if not text:
+        return ""
+    clean = re.sub(r"<[^>]+>", " ", text)
+    clean = clean.replace("&amp;", "&").replace("&quot;", '"').replace("&#039;", "'").replace("&apos;", "'")
+    clean = clean.replace("&lt;", "<").replace("&gt;", ">").replace("&#8217;", "'").replace("&#8220;", '"').replace("&#8221;", '"')
+    return " ".join(clean.split())
 
 def get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "env-monitor/1.0"})
@@ -457,8 +465,11 @@ def update_net(cache):
             pass
         cache["air_t"] = now
 
-    # tech headlines: every hour
-    if now - cache.get("news_t", 0) > 3600 or not cache.get("tech"):
+    # tech headlines: every hour (or immediately if cached items lack direct article URLs)
+    needs_news = (now - cache.get("news_t", 0) > 3600 or
+                  not cache.get("tech") or
+                  not any("url" in item for item in cache["tech"]))
+    if needs_news:
         try:
             ids = get_json("https://hacker-news.firebaseio.com/v0/topstories.json")[:12]
             items = []
@@ -468,14 +479,74 @@ def update_net(cache):
                     site = urllib.parse.urlparse(item.get("url") or "").netloc
                     if site.startswith("www."):
                         site = site[4:]
+                    story_url = item.get("url")
+                    hn_url = "https://news.ycombinator.com/item?id={}".format(item["id"])
                     items.append({"title": item["title"],
                                   "site": site or "news.ycombinator.com",
-                                  "points": item.get("score", 0)})
+                                  "points": item.get("score", 0),
+                                  "comments": item.get("descendants", 0),
+                                  "url": story_url or hn_url,
+                                  "hn_url": hn_url,
+                                  "id": item["id"]})
             if items:
                 cache["tech"] = items
         except Exception:
             pass
         cache["news_t"] = now
+
+    # AI news with rich context: every 2 hours (or immediately if cached items lack summaries)
+    needs_ai = (now - cache.get("ai_t", 0) > 7200 or
+                not cache.get("ai_news") or
+                not any(item.get("summary") for item in cache.get("ai_news", [])))
+    if needs_ai:
+        ai_items = []
+        # Source 1: Ars Technica AI (high quality reporting with summary paragraphs)
+        try:
+            req = urllib.request.Request("https://arstechnica.com/ai/feed/",
+                                         headers={"User-Agent": "Mozilla/5.0 (compatible; EnvMonitor/1.0)"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                root = ET.fromstring(r.read())
+            for item in root.iter("item"):
+                t = (item.findtext("title") or "").strip()
+                link = (item.findtext("link") or "").strip()
+                desc = item.findtext("description") or item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or ""
+                desc = strip_html(desc)
+                if t and link:
+                    ai_items.append({
+                        "title": t,
+                        "url": link,
+                        "summary": desc[:350],
+                        "source": "Ars Technica"
+                    })
+        except Exception:
+            pass
+
+        # Source 2: VentureBeat AI (frontier releases and enterprise updates)
+        if len(ai_items) < 6:
+            try:
+                req = urllib.request.Request("https://venturebeat.com/category/ai/feed/",
+                                             headers={"User-Agent": "Mozilla/5.0 (compatible; EnvMonitor/1.0)"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    root = ET.fromstring(r.read())
+                for item in root.iter("item"):
+                    t = (item.findtext("title") or "").strip()
+                    link = (item.findtext("link") or "").strip()
+                    desc = item.findtext("description") or item.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or ""
+                    desc = strip_html(desc)
+                    if t and link:
+                        ai_items.append({
+                            "title": t,
+                            "url": link,
+                            "summary": desc[:350],
+                            "source": "VentureBeat"
+                        })
+            except Exception:
+                pass
+
+        if ai_items:
+            cache["ai_news"] = ai_items[:6]
+            print(">>> Fetched {} AI news items with context".format(len(ai_items)), flush=True)
+        cache["ai_t"] = now
 
 # ---------- right-side blocks ----------
 RX0, RX1 = 540, 1004            # right column edges
@@ -741,12 +812,164 @@ def block_tech(img, d, tech, now):
         d.text((24, y + 2), fit(d, meta, F_SML, 468), font=F_SML, fill=50)
         y += 50
 
+# ---------- qr code & full-screen reader ----------
+def make_qr(url, size=150):
+    try:
+        import qrcode
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=5,
+            border=2,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white").convert("L")
+        return img.resize((size, size), Image.NEAREST)
+    except Exception:
+        # Stylized placeholder with finder patterns if qrcode package is missing
+        img = Image.new("L", (size, size), 255)
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, size - 1, size - 1], outline=0, width=2)
+        for cx, cy in [(24, 24), (size - 25, 24), (24, size - 25)]:
+            d.rectangle([cx - 16, cy - 16, cx + 16, cy + 16], fill=0)
+            d.rectangle([cx - 10, cy - 10, cx + 10, cy + 10], fill=255)
+            d.rectangle([cx - 5, cy - 5, cx + 5, cy + 5], fill=0)
+        text_center(d, size // 2, size // 2 - 8, "QR CODE", F_SML, fill=0)
+        text_center(d, size // 2, size // 2 + 12, "scan on phone", font(False, 18), fill=90)
+        return img
+
+def render_tech_screen(img, d, tech, now):
+    # Header
+    draw_icon(img, newspaper, 46, 42, "newspaper", box=60, scale=0.7)
+    d.text((82, 28), "TECH NEWS", font=font(True, 32), fill=0)
+    text_right(d, 994, 32, time.strftime("%H:%M  %a, %b %d"), font(True, 26), fill=0)
+    d.line([30, 78, 994, 78], fill=0, width=2)
+
+    if not tech:
+        text_center(d, W // 2, H // 2, "Fetching top stories…", F_TXT, fill=80)
+        return
+
+    # Top 3 stories with generous spacing
+    cards = tech[:3]
+    y_starts = [96, 304, 512]
+
+    for idx, item in enumerate(cards):
+        y0 = y_starts[idx]
+        hn_fallback = "https://news.ycombinator.com/item?id={}".format(item.get("id")) if item.get("id") else "https://news.ycombinator.com"
+        url = item.get("url") or item.get("hn_url") or hn_fallback
+
+        # Story text on the left (x = 40 to 810)
+        pts = item.get("points", 0)
+        site = item.get("site", "news.ycombinator.com")
+        meta = "#{}  ·  {}  ·  {} pt{}".format(idx + 1, site, pts, "" if pts == 1 else "s")
+        if item.get("comments") is not None:
+            meta += "  ·  {} comment{}".format(item["comments"], "" if item["comments"] == 1 else "s")
+        d.text((40, y0 + 10), meta, font=font(True, 24), fill=60)
+
+        # Headline
+        lines = wrap(d, item["title"], font(True, 32), 760)
+        if len(lines) > 2:
+            lines = [lines[0], fit(d, " ".join(lines[1:]), font(True, 32), 760)]
+        ty = y0 + 46
+        for line in lines:
+            d.text((40, ty), line, font=font(True, 32), fill=0)
+            ty += 40
+
+        # 150x150 QR code on the right (x = 834 to 984)
+        qr_img = make_qr(url, size=150)
+        img.paste(qr_img, (834, y0 + 8))
+        d.rectangle([833, y0 + 7, 985, y0 + 159], outline=180, width=1)
+
+        # Row divider
+        if idx < 2:
+            d.line([30, y0 + 192, 994, y0 + 192], fill=210, width=1)
+
+    # Footer
+    d.line([30, 716, 994, 716], fill=0, width=2)
+    text_right(d, 994, 726, "Updated " + time.strftime("%H:%M"), F_SML, fill=80)
+
+
+def render_ai_screen(img, d, cache, now):
+    # Header
+    draw_icon(img, planet, 46, 42, "planet", box=60, scale=0.7)
+    d.text((82, 28), "AI DIGEST", font=font(True, 32), fill=0)
+    text_right(d, 994, 32, time.strftime("%H:%M  %a, %b %d"), font(True, 26), fill=0)
+    d.line([30, 78, 994, 78], fill=0, width=2)
+
+    ai_news = cache.get("ai_news", [])
+    if not ai_news:
+        text_center(d, W // 2, H // 2, "Fetching AI news & context…", F_TXT, fill=80)
+        return
+
+    # 3 major AI stories with rich context paragraphs and QR codes on the right
+    cards = ai_news[:3]
+    y_starts = [96, 304, 512]
+
+    for idx, item in enumerate(cards):
+        y0 = y_starts[idx]
+        url = item.get("url", "https://arstechnica.com/ai/")
+
+        # Source / rank
+        meta = "#{}  ·  {}".format(idx + 1, item.get("source", "AI News"))
+        d.text((40, y0 + 8), meta, font=font(True, 24), fill=60)
+
+        # Headline (bold, 1-2 lines)
+        title_lines = wrap(d, item["title"], font(True, 28), 760)
+        if len(title_lines) > 2:
+            title_lines = [title_lines[0], fit(d, " ".join(title_lines[1:]), font(True, 28), 760)]
+        ty = y0 + 38
+        for line in title_lines:
+            d.text((40, ty), line, font=font(True, 28), fill=0)
+            ty += 34
+
+        # Context / Summary paragraph (2-3 lines of key takeaways)
+        summary = item.get("summary", "")
+        if summary:
+            summary_lines = wrap(d, summary, font(False, 23), 760)
+            max_lines = 4 - len(title_lines)
+            if len(summary_lines) > max_lines:
+                summary_lines = summary_lines[:max_lines-1] + [fit(d, " ".join(summary_lines[max_lines-1:]), font(False, 23), 760)]
+            sy = ty + 6
+            for line in summary_lines:
+                d.text((40, sy), line, font=font(False, 23), fill=40)
+                sy += 28
+
+        # 150x150 QR code on the right (x = 834 to 984)
+        qr_img = make_qr(url, size=150)
+        img.paste(qr_img, (834, y0 + 8))
+        d.rectangle([833, y0 + 7, 985, y0 + 159], outline=180, width=1)
+
+        # Row divider
+        if idx < 2:
+            d.line([30, y0 + 192, 994, y0 + 192], fill=210, width=1)
+
+    # Footer
+    d.line([30, 716, 994, 716], fill=0, width=2)
+    text_right(d, 994, 726, "Updated " + time.strftime("%H:%M"), F_SML, fill=80)
+
 # ---------- page ----------
 def render(cache):
+    now = time.time()
+    # Auto-timeout: revert to main dashboard after 5 minutes
+    if cache.get("view", "dash") != "dash" and (now - cache.get("view_time", 0)) > 300:
+        cache["view"] = "dash"
+
+    view = cache.get("view", "dash")
+    if view == "tech":
+        img = Image.new("L", (W, H), 255)
+        d = ImageDraw.Draw(img)
+        render_tech_screen(img, d, cache.get("tech"), now)
+        return img
+    elif view == "ai":
+        img = Image.new("L", (W, H), 255)
+        d = ImageDraw.Draw(img)
+        render_ai_screen(img, d, cache, now)
+        return img
+
     data, mtime = read_status()
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)
-    now = time.time()
 
     # left half: compact sensor grid on top, month calendar below
     d.line([512, 20, 512, 696], fill=0, width=2)
@@ -804,6 +1027,59 @@ def fetch_loop(cache):
             pass
         time.sleep(60)
 
+TRIGGER_EVENT = threading.Event()
+
+VIEWS = ["dash", "tech", "ai"]
+
+def button_listener(cache):
+    def toggle():
+        curr = cache.get("view", "dash")
+        idx = (VIEWS.index(curr) + 1) % len(VIEWS) if curr in VIEWS else 0
+        cache["view"] = VIEWS[idx]
+        cache["view_time"] = time.time()
+        print(">>> Button pressed! View changed to:", cache["view"], flush=True)
+        TRIGGER_EVENT.set()
+
+    # Try paho-mqtt first
+    try:
+        import paho.mqtt.client as mqtt
+        def on_connect(client, userdata, flags, *args):
+            client.subscribe("environment/button")
+            print(">>> MQTT listener subscribed to environment/button", flush=True)
+
+        def on_message(client, userdata, msg):
+            toggle()
+
+        try:
+            # Paho-mqtt v2 compatibility
+            c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+        except Exception:
+            c = mqtt.Client()
+
+        c.on_connect = on_connect
+        c.on_message = on_message
+        c.connect("localhost", 1883, 60)
+        c.loop_forever()
+        return
+    except Exception as e:
+        print(">>> paho-mqtt listener error:", e, "- falling back to mosquitto_sub", flush=True)
+
+    # Fallback to mosquitto_sub binary (always available on the Pi)
+    try:
+        import subprocess
+        print(">>> Starting mosquitto_sub fallback listener", flush=True)
+        # stdbuf -oL forces line-buffering so single-line MQTT messages aren't buffered
+        cmd = ["stdbuf", "-oL", "mosquitto_sub", "-h", "localhost", "-t", "environment/button"]
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             universal_newlines=True, bufsize=1)
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            toggle()
+    except Exception as e:
+        print(">>> mosquitto_sub fallback error:", e, flush=True)
+
 def main():
     once = "--once" in sys.argv
     cache = load(CACHE, {})
@@ -812,6 +1088,7 @@ def main():
         update_net(cache)
     else:
         threading.Thread(target=fetch_loop, args=(cache,), daemon=True).start()
+        threading.Thread(target=button_listener, args=(cache,), daemon=True).start()
     while True:
         save(CACHE, dict(cache))
         img = protect(render(cache)).rotate(ROTATE, expand=True)
@@ -819,7 +1096,8 @@ def main():
         os.replace(OUT + ".tmp.png", OUT)
         if once:
             break
-        time.sleep(30)
+        TRIGGER_EVENT.wait(30)
+        TRIGGER_EVENT.clear()
 
 if __name__ == "__main__":
     main()
