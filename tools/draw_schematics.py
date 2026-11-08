@@ -378,40 +378,28 @@ def generate_arduino_schematic():
         wy += 22
 
     # Arduino Sketch Summary Box
-    draw_box(d, [rx0, 410, rx0 + rw, 710], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
-    d.text((rx0 + 25, 430), "ARDUINO SKETCH HIGHLIGHTS", font=f_header, fill=(15, 23, 42))
+    draw_box(d, [rx0, 410, rx0 + rw, 960], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
+    d.text((rx0 + 25, 435), "ARDUINO TELEMETRY & PIN CONFIG", font=f_header, fill=(15, 23, 42))
 
     notes = [
         ("Non-blocking Button Latch:", 
-         "The button is debounced in loop() on every iteration,\n"
-         "ensuring momentary presses are latched and never missed\n"
-         "during the 2-second DHT safe reading delay."),
+         "The button is debounced on every loop() iteration to latch\n"
+         "momentary presses without being blocked by the 2s sensor interval."),
         ("Internal Pull-Up:", 
-         "pinMode(13, INPUT_PULLUP) uses the internal ATmega\n"
-         "pullup resistor. Wiring directly from D13 to adjacent GND\n"
-         "means zero external resistors are required for the button."),
-        ("Atomic Telemetry Payload:", 
-         "Serial.print transmits a single compact JSON object every 2s:\n"
+         "pinMode(13, INPUT_PULLUP) uses the internal ATmega pull-up\n"
+         "resistor. The tactile switch connects directly to D13 and GND."),
+        ("Serial Telemetry Output:", 
+         "Transmits a single JSON line over USB serial at 9600 baud:\n"
          "{\"temp\":28.5,\"humidity\":44,\"light\":185,\"motion\":1,\"button\":1}")
     ]
-    ny = 475
+    ny = 490
     for htitle, hdesc in notes:
         d.text((rx0 + 25, ny), htitle, font=f_body_b, fill=(15, 23, 42))
-        ny += 25
+        ny += 28
         for line in hdesc.split("\n"):
             d.text((rx0 + 25, ny), line, font=f_small, fill=(71, 85, 105))
-            ny += 20
-        ny += 10
-
-    # Safety & Best Practices Box
-    draw_box(d, [rx0, 740, rx0 + rw, 960], fill=(240, 253, 250), outline=(94, 234, 212), radius=12)
-    d.text((rx0 + 25, 760), "HARDWARE TIPS & BEST PRACTICES", font=f_header, fill=(15, 118, 110))
-    d.text((rx0 + 25, 795), "• DHT11 rate limit: Never poll the DHT11 faster than once every 2s.", font=f_small, fill=(15, 23, 42))
-    d.text((rx0 + 25, 825), "• PIR sensor trigger mode: Set the PIR jumper to 'H' (re-triggerable)", font=f_small, fill=(15, 23, 42))
-    d.text((rx0 + 25, 850), "  so it holds output HIGH while continuous motion occurs in the room.", font=f_small, fill=(71, 85, 105))
-    d.text((rx0 + 25, 880), "• LDR placement: Keep the LDR pointed toward room ambient light", font=f_small, fill=(15, 23, 42))
-    d.text((rx0 + 25, 905), "  rather than directly under a harsh desk lamp to avoid saturation.", font=f_small, fill=(71, 85, 105))
-    d.text((rx0 + 25, 930), "• USB communication: Baud 9600 matches Pi /dev/ttyACM0 listener.", font=f_small, fill=(15, 23, 42))
+            ny += 24
+        ny += 20
 
     out_path = os.path.join(DOCS, "arduino-schematic.png")
     img.save(out_path)
