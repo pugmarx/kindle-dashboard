@@ -5,6 +5,6 @@
   "rotate": 90,
   "night_from": 21,
   "night_to": 7,
-  "light_dim": 20,
-  "light_bright": 120
+  "light_dim": 200,
+  "light_bright": 650
 }

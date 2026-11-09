@@ -48,6 +48,8 @@ void loop() {
 
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature(); // Celsius
+  // Discard first analog read to let ADC multiplexer/capacitor settle
+  analogRead(LDR_PIN);
   int light = analogRead(LDR_PIN);
   int light_level = 1023 - light;
   

@@ -17,7 +17,7 @@ LAT, LON, PLACE = 51.5074, -0.1278, "London"
 ROTATE = 90          # change to 270 if the dashboard appears upside down
 NIGHT_FROM, NIGHT_TO = 21, 7   # show inverted (white on black) between these hours
 SHIFT = 3                      # pixels to nudge the layout each hour
-LIGHT_DIM, LIGHT_BRIGHT = 20, 120   # light sensor: below DIM = Dark, above BRIGHT = Bright
+LIGHT_DIM, LIGHT_BRIGHT = 200, 650   # light sensor: below DIM = Dark, above BRIGHT = Bright
 
 try:
     if os.path.exists(CONFIG_FILE):

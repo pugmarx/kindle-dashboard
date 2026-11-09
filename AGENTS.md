@@ -53,6 +53,7 @@ Deploying is done by the user: download `render.py`, `scp` it to `/tmp` on the P
 ## Working with the user
 
 - The user is on a Mac (zsh). Give short, numbered, step-by-step instructions and say which machine each command runs on. They dislike long explanations.
+- Never push code to remote repositories (e.g. `git push`) without explicitly asking the user and receiving permission first.
 - Prefer handing over a whole file to download over asking them to paste long code into nano. Pasting multi-line heredocs into zsh has failed before, and pasting indented code into nano broke Python indentation.
 - Remind them to `rm ~/Downloads/render*.py` before downloading a new copy, because macOS renames duplicates and the old file gets deployed.
 - Show a rendered preview of visual changes. They care about the look: flat black clipart-style icons with a small white glint, rounded font, balanced layout, readable from 3–4 ft away (avoid light grey text for anything that matters).
