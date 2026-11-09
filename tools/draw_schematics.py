@@ -101,7 +101,7 @@ def generate_system_architecture():
     # Arduino Sensor Cards inside Column 1
     sensors = [
         ("DHT11 Sensor", "Pin 4 (Digital)", "Temperature & Humidity (every 2s)", (59, 130, 246)),
-        ("PIR Motion Sensor", "Pin 2 (Digital)", "Presence / Motion (1 = Here, 0 = Empty)", (234, 88, 12)),
+        ("Dual PIR Sensors", "Pins 2 & 3 (Digital)", "Motion (1 if either/both detect presence)", (234, 88, 12)),
         ("LDR Light Sensor", "Pin A0 (Analog)", "Room illumination (1023 - raw level)", (202, 138, 4)),
         ("Tactile Push Button", "Pin 13 & GND", "INPUT_PULLUP (Active LOW) · Event Trigger", (147, 51, 234))
     ]
@@ -295,10 +295,11 @@ def generate_arduino_schematic():
     d.text((ax0 + 50, py_pins + 15), "I/O PINS USED", font=f_body_b, fill=(71, 85, 105))
 
     pins_info = [
-        ("Pin 2 (PIR)", "Digital Input", (234, 88, 12), py_pins + 55),
-        ("Pin 4 (DHT11)", "Digital I/O", (59, 130, 246), py_pins + 125),
-        ("Pin 13 (Button)", "INPUT_PULLUP", (147, 51, 234), py_pins + 195),
-        ("Pin A0 (LDR)", "Analog In (0-1023)", (202, 138, 4), py_pins + 265)
+        ("Pin 2 (PIR 1)", "Digital Input", (234, 88, 12), py_pins + 45),
+        ("Pin 3 (PIR 2)", "Digital Input", (249, 115, 22), py_pins + 105),
+        ("Pin 4 (DHT11)", "Digital I/O", (59, 130, 246), py_pins + 165),
+        ("Pin 13 (Button)", "INPUT_PULLUP", (147, 51, 234), py_pins + 225),
+        ("Pin A0 (LDR)", "Analog In (0-1023)", (202, 138, 4), py_pins + 285)
     ]
     for pname, ptype, pcol, py_pos in pins_info:
         draw_box(d, [ax0 + 50, py_pos, ax1 - 50, py_pos + 50], fill=(255, 255, 255), outline=pcol, radius=8, width=2)
@@ -320,17 +321,19 @@ def generate_arduino_schematic():
     d.text((105, c1_y + 75), "• Pin 2 (DATA) --> Arduino Pin 4 (DHTPIN)", font=f_body, fill=(59, 130, 246))
     d.text((105, c1_y + 102), "• Pin 4 (GND)  --> Arduino GND", font=f_body, fill=(15, 23, 42))
     d.text((105, c1_y + 128), "Reads every 2000 ms (temp in °C, hum in %)", font=f_small, fill=(100, 116, 139))
-    draw_arrow(d, (80 + comp_w, c1_y + 80), (ax0 + 50, py_pins + 150), fill=(59, 130, 246), width=3)
+    draw_arrow(d, (80 + comp_w, c1_y + 80), (ax0 + 50, py_pins + 190), fill=(59, 130, 246), width=3)
 
-    # Component 2: PIR Motion Sensor
-    c2_y = 370
-    draw_box(d, [80, c2_y, 80 + comp_w, c2_y + 160], fill=(255, 255, 255), outline=(234, 88, 12), radius=12, width=2)
-    d.text((105, c2_y + 15), "PIR Motion Sensor (HC-SR501)", font=f_header, fill=(234, 88, 12))
-    d.text((105, c2_y + 48), "• VCC (5V)     --> Arduino 5V", font=f_body, fill=(239, 68, 68))
-    d.text((105, c2_y + 75), "• OUT (Signal) --> Arduino Pin 2 (PIR_PIN)", font=f_body, fill=(234, 88, 12))
-    d.text((105, c2_y + 102), "• GND          --> Arduino GND", font=f_body, fill=(15, 23, 42))
-    d.text((105, c2_y + 128), "Digital HIGH when motion detected (Here / Empty)", font=f_small, fill=(100, 116, 139))
-    draw_arrow(d, (80 + comp_w, c2_y + 80), (ax0 + 50, py_pins + 80), fill=(234, 88, 12), width=3)
+    # Component 2: Dual PIR Motion Sensors
+    c2_y = 360
+    draw_box(d, [80, c2_y, 80 + comp_w, c2_y + 180], fill=(255, 255, 255), outline=(234, 88, 12), radius=12, width=2)
+    d.text((105, c2_y + 15), "Dual PIR Motion Sensors (D2 & D3)", font=f_header, fill=(234, 88, 12))
+    d.text((105, c2_y + 46), "• VCC (5V)     --> Arduino 5V (shared rail)", font=f_body, fill=(239, 68, 68))
+    d.text((105, c2_y + 70), "• PIR 1 OUT    --> Arduino Pin 2 (PIR1_PIN)", font=f_body, fill=(234, 88, 12))
+    d.text((105, c2_y + 94), "• PIR 2 OUT    --> Arduino Pin 3 (PIR2_PIN)", font=f_body, fill=(249, 115, 22))
+    d.text((105, c2_y + 118), "• GND          --> Arduino GND (shared rail)", font=f_body, fill=(15, 23, 42))
+    d.text((105, c2_y + 144), "Logic: motion = (pir1 || pir2) ? 1 : 0", font=f_mono, fill=(234, 88, 12))
+    draw_arrow(d, (80 + comp_w, c2_y + 75), (ax0 + 50, py_pins + 70), fill=(234, 88, 12), width=3)
+    draw_arrow(d, (80 + comp_w, c2_y + 100), (ax0 + 50, py_pins + 130), fill=(249, 115, 22), width=3)
 
     # Component 3: Tactile Push Button
     c3_y = 560
@@ -341,10 +344,10 @@ def generate_arduino_schematic():
     d.text((105, c3_y + 105), "Wiring: Connected between Pin 13 and adjacent GND.", font=f_small, fill=(71, 85, 105))
     d.text((105, c3_y + 128), "Mode: pinMode(13, INPUT_PULLUP) - no resistor needed!", font=f_mono, fill=(147, 51, 234))
     d.text((105, c3_y + 150), "State: Idle = HIGH (1), Pressed = LOW (0)", font=f_small, fill=(100, 116, 139))
-    draw_arrow(d, (80 + comp_w, c3_y + 75), (ax0 + 50, py_pins + 220), fill=(147, 51, 234), width=3)
+    draw_arrow(d, (80 + comp_w, c3_y + 75), (ax0 + 50, py_pins + 250), fill=(147, 51, 234), width=3)
 
     # Component 4: LDR Light Sensor Divider
-    c4_y = 770
+    c4_y = 760
     draw_box(d, [80, c4_y, 80 + comp_w, c4_y + 190], fill=(255, 255, 255), outline=(202, 138, 4), radius=12, width=2)
     d.text((105, c4_y + 15), "LDR Sensor (Voltage Divider)", font=f_header, fill=(202, 138, 4))
     d.text((105, c4_y + 48), "• 5V Rail      --> LDR leg 1", font=f_body, fill=(239, 68, 68))
@@ -352,36 +355,40 @@ def generate_arduino_schematic():
     d.text((105, c4_y + 102), "• 10kΩ Resistor --> Arduino GND", font=f_body, fill=(15, 23, 42))
     d.text((105, c4_y + 132), "Calculates: light_level = 1023 - analogRead(A0)", font=f_mono, fill=(202, 138, 4))
     d.text((105, c4_y + 156), "Output: Level 0-1023 (Dark / Dim / Bright thresholds)", font=f_small, fill=(100, 116, 139))
-    draw_arrow(d, (80 + comp_w, c4_y + 75), (ax0 + 50, py_pins + 290), fill=(202, 138, 4), width=3)
+    draw_arrow(d, (80 + comp_w, c4_y + 75), (ax0 + 50, py_pins + 310), fill=(202, 138, 4), width=3)
 
     # 3. Right Side: Technical Specs & Wire Legend
     rx0 = 1260
     rw = 580
     
     # Legend Box
-    draw_box(d, [rx0, 180, rx0 + rw, 380], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
+    draw_box(d, [rx0, 180, rx0 + rw, 400], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
     d.text((rx0 + 25, 200), "WIRE COLOR CONVENTIONS", font=f_header, fill=(15, 23, 42))
     
     wires = [
         ("Red Wire", "5V Power Supply to Sensors", (239, 68, 68)),
         ("Black Wire", "Common Ground (GND) Return Rail", (15, 23, 42)),
         ("Blue Wire", "DHT11 Digital Serial Data Signal (Pin 4)", (59, 130, 246)),
-        ("Orange Wire", "PIR Motion Digital Pulse Output (Pin 2)", (234, 88, 12)),
+        ("Orange Wire", "PIR 1 Motion Digital Pulse (Pin 2)", (234, 88, 12)),
+        ("Amber-Orange", "PIR 2 Motion Digital Pulse (Pin 3)", (249, 115, 22)),
         ("Purple Wire", "Tactile Button to Pin 13 (Active LOW)", (147, 51, 234)),
         ("Amber Wire", "LDR Voltage Divider Analog Signal (Pin A0)", (202, 138, 4))
     ]
-    wy = 240
+    wy = 236
     for wname, wdesc, wcol in wires:
         d.line([rx0 + 25, wy + 8, rx0 + 60, wy + 8], fill=wcol, width=4)
         d.text((rx0 + 75, wy), wname, font=f_body_b, fill=wcol)
-        d.text((rx0 + 195, wy + 2), wdesc, font=f_small, fill=(71, 85, 105))
+        d.text((rx0 + 205, wy + 2), wdesc, font=f_small, fill=(71, 85, 105))
         wy += 22
 
     # Arduino Sketch Summary Box
-    draw_box(d, [rx0, 410, rx0 + rw, 960], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
-    d.text((rx0 + 25, 435), "ARDUINO TELEMETRY & PIN CONFIG", font=f_header, fill=(15, 23, 42))
+    draw_box(d, [rx0, 425, rx0 + rw, 960], fill=(255, 255, 255), outline=(203, 213, 225), radius=12)
+    d.text((rx0 + 25, 450), "ARDUINO TELEMETRY & PIN CONFIG", font=f_header, fill=(15, 23, 42))
 
     notes = [
+        ("Dual PIR Motion Detection:",
+         "Monitors two independent zones on D2 and D3.\n"
+         "If either sensor detects motion: (pir1 || pir2) -> motion: 1."),
         ("Non-blocking Button Latch:", 
          "The button is debounced on every loop() iteration to latch\n"
          "momentary presses without being blocked by the 2s sensor interval."),
@@ -392,14 +399,14 @@ def generate_arduino_schematic():
          "Transmits a single JSON line over USB serial at 9600 baud:\n"
          "{\"temp\":28.5,\"humidity\":44,\"light\":185,\"motion\":1,\"button\":1}")
     ]
-    ny = 490
+    ny = 495
     for htitle, hdesc in notes:
         d.text((rx0 + 25, ny), htitle, font=f_body_b, fill=(15, 23, 42))
         ny += 28
         for line in hdesc.split("\n"):
             d.text((rx0 + 25, ny), line, font=f_small, fill=(71, 85, 105))
             ny += 24
-        ny += 20
+        ny += 16
 
     out_path = os.path.join(DOCS, "arduino-schematic.png")
     img.save(out_path)

@@ -20,7 +20,7 @@ The bottom-left corner takes turns between the calendar and tech news every few 
 
 The Kindle does almost nothing. It just downloads a picture every 30 seconds and puts it on the screen. All the real work happens on a Raspberry Pi.
 
-1. **Sensing Tier (Arduino)**: Reads the DHT11 (temp/humidity), PIR (motion), and LDR (light) every 2 seconds, and listens for tactile button presses on pin 13 (`INPUT_PULLUP`). Emits JSON over USB serial (`/dev/ttyACM0`).
+1. **Sensing Tier (Arduino)**: Reads the DHT11 (temp/humidity), dual PIR motion sensors (D2 & D3), and LDR (light) every 2 seconds, and listens for tactile button presses on pin 13 (`INPUT_PULLUP`). Emits JSON over USB serial (`/dev/ttyACM0`).
 2. **Processing Tier (Raspberry Pi)**:
    - `serial_to_influx`: Reads serial, publishes button presses instantly to MQTT `environment/button`, and logs time-series data to InfluxDB.
    - `push_to_mqtt`: Pulls from InfluxDB every 5s and publishes to MQTT `environment/latest`.

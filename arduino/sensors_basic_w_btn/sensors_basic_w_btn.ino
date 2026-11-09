@@ -3,7 +3,8 @@
 #define DHTPIN 4
 #define DHTTYPE DHT11
 
-#define PIR_PIN 2
+#define PIR1_PIN 2     // Primary PIR motion sensor
+#define PIR2_PIN 3     // Secondary PIR motion sensor
 #define LDR_PIN A0
 #define BUTTON_PIN 13  // D13 connected to tactile button, other leg to GND
 
@@ -20,7 +21,8 @@ const unsigned long debounceDelay = 50;
 void setup() {
   Serial.begin(9600);
 
-  pinMode(PIR_PIN, INPUT);
+  pinMode(PIR1_PIN, INPUT);
+  pinMode(PIR2_PIN, INPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   dht.begin();
 }
@@ -48,7 +50,11 @@ void loop() {
   float temperature = dht.readTemperature(); // Celsius
   int light = analogRead(LDR_PIN);
   int light_level = 1023 - light;
-  int motion = digitalRead(PIR_PIN);
+  
+  // Motion is 1 if either or both PIR sensors detect presence
+  int motion1 = digitalRead(PIR1_PIN);
+  int motion2 = digitalRead(PIR2_PIN);
+  int motion = (motion1 == HIGH || motion2 == HIGH) ? 1 : 0;
 
   // DHT11 can fail; skip bad reads
   if (isnan(humidity) || isnan(temperature)) {
