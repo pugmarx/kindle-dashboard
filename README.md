@@ -35,6 +35,9 @@ The Kindle does almost nothing. It just downloads a picture every 30 seconds and
 ## What's in here
 
 ```
+arduino/
+  sensors_basic_w_btn/
+    sensors_basic_w_btn.ino  Arduino sketch reading sensors & debouncing button
 kindle/
   sensor_loop.sh     the fetch-and-draw loop
   sensor_start.sh    tap this in the Kindle library to start
