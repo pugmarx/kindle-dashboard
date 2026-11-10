@@ -248,6 +248,12 @@ def w_clear(d, cx, cy):
         d.line([cx + 31*math.cos(a), cy + 31*math.sin(a),
                 cx + 46*math.cos(a), cy + 46*math.sin(a)], fill=0, width=7)
 
+def w_clear_night(d, cx, cy):
+    d.ellipse([cx-28, cy-28, cx+28, cy+28], fill=0)
+    d.ellipse([cx-12, cy-34, cx+36, cy+14], fill=255)
+    for sx, sy in ((cx + 26, cy - 20), (cx + 34, cy + 8)):
+        d.ellipse([sx-3, sy-3, sx+3, sy+3], fill=0)
+
 def w_partly(d, cx, cy):
     sx, sy = cx + 12, cy - 14
     d.ellipse([sx-18, sy-18, sx+18, sy+18], fill=0)
@@ -255,6 +261,13 @@ def w_partly(d, cx, cy):
         a = i * math.pi / 4
         d.line([sx + 25*math.cos(a), sy + 25*math.sin(a),
                 sx + 36*math.cos(a), sy + 36*math.sin(a)], fill=0, width=6)
+    _cloud(d, cx - 2, cy + 14, fill=255, grow=7)
+    _cloud(d, cx - 2, cy + 14)
+
+def w_partly_night(d, cx, cy):
+    mx, my = cx + 12, cy - 16
+    d.ellipse([mx-22, my-22, mx+22, my+22], fill=0)
+    d.ellipse([mx-8, my-28, mx+30, my+10], fill=255)
     _cloud(d, cx - 2, cy + 14, fill=255, grow=7)
     _cloud(d, cx - 2, cy + 14)
 
@@ -287,7 +300,13 @@ def gloss_cloud(d, cx, cy):
 def gloss_w_clear(d, cx, cy):
     d.arc([cx-15, cy-15, cx+15, cy+15], 175, 255, fill=255, width=5)
 
+def gloss_w_clear_night(d, cx, cy):
+    d.arc([cx-22, cy-22, cx+22, cy+22], 120, 210, fill=255, width=4)
+
 def gloss_w_partly(d, cx, cy):
+    gloss_cloud(d, cx - 2, cy + 14)
+
+def gloss_w_partly_night(d, cx, cy):
     gloss_cloud(d, cx - 2, cy + 14)
 
 def gloss_w_cloud(d, cx, cy):
@@ -296,13 +315,13 @@ def gloss_w_cloud(d, cx, cy):
 def gloss_w_rain(d, cx, cy):
     gloss_cloud(d, cx, cy - 12)
 
-def weather_icon(code):
+def weather_icon(code, night=False):
     if code is None:
         return None
     if code == 0:
-        return w_clear, "w_clear"
+        return (w_clear_night, "w_clear_night") if night else (w_clear, "w_clear")
     if code < 3:
-        return w_partly, "w_partly"
+        return (w_partly_night, "w_partly_night") if night else (w_partly, "w_partly")
     if code < 50:
         return w_cloud, "w_cloud"
     if code < 95:
@@ -312,7 +331,8 @@ def weather_icon(code):
 GLOSS = {"thermometer": gloss_thermometer, "droplet": gloss_droplet,
          "sun": gloss_sun, "person1": gloss_person, "glass": gloss_glass,
          "stretcher": gloss_stretcher,
-         "w_clear": gloss_w_clear, "w_partly": gloss_w_partly,
+         "w_clear": gloss_w_clear, "w_clear_night": gloss_w_clear_night,
+         "w_partly": gloss_w_partly, "w_partly_night": gloss_w_partly_night,
          "w_cloud": gloss_w_cloud, "w_rain": gloss_w_rain, "w_storm": gloss_w_rain}
 
 _ICONS = {}
@@ -321,6 +341,17 @@ ICON_BOX = 180
 def is_night():
     h = time.localtime().tm_hour
     return h >= NIGHT_FROM or h < NIGHT_TO
+
+def is_night_time(w=None):
+    if is_night():
+        return True
+    if w and w.get("sunrise") and w.get("sunset"):
+        now_hm = time.strftime("%H:%M")
+        if w["sunrise"] <= w["sunset"]:
+            return not (w["sunrise"] <= now_hm < w["sunset"])
+        else:
+            return w["sunset"] <= now_hm < w["sunrise"]
+    return False
 
 def shaded(fn, key, night=False, box=ICON_BOX, scale=1.0):
     # Day: flat black icon with small white reflections.
@@ -483,37 +514,71 @@ def update_net(cache):
             pass
         cache["air_t"] = now
 
-    # tech headlines: every hour (or immediately if cached items lack direct article URLs)
+    # tech headlines with context: every 1 hour (or immediately if cached items lack summaries)
     needs_news = (now - cache.get("news_t", 0) > 3600 or
                   not cache.get("tech") or
-                  not any("url" in item for item in cache["tech"]))
+                  not any(item.get("summary") for item in cache.get("tech", [])))
     if needs_news:
+        tech_items = []
+        # Source 1: Ars Technica Technology
         try:
-            ids = get_json("https://hacker-news.firebaseio.com/v0/topstories.json")[:12]
-            items = []
-            for i in ids:
-                item = get_json("https://hacker-news.firebaseio.com/v0/item/{}.json".format(i))
-                if item and item.get("title"):
-                    site = urllib.parse.urlparse(item.get("url") or "").netloc
-                    if site.startswith("www."):
-                        site = site[4:]
-                    story_url = item.get("url")
-                    hn_url = "https://news.ycombinator.com/item?id={}".format(item["id"])
-                    items.append({"title": item["title"],
-                                  "site": site or "news.ycombinator.com",
-                                  "points": item.get("score", 0),
-                                  "comments": item.get("descendants", 0),
-                                  "url": story_url or hn_url,
-                                  "hn_url": hn_url,
-                                  "id": item["id"]})
-            if items:
-                cache["tech"] = items
+            req = urllib.request.Request("https://feeds.arstechnica.com/arstechnica/technology-lab",
+                                         headers={"User-Agent": "Mozilla/5.0 (compatible; EnvMonitor/1.0)"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                root = ET.fromstring(r.read())
+            for item in root.iter("item"):
+                t = (item.findtext("title") or "").strip()
+                link = (item.findtext("link") or "").strip()
+                desc = strip_html(item.findtext("description") or "")
+                if t and link:
+                    tech_items.append({
+                        "title": t,
+                        "url": link,
+                        "summary": desc[:350],
+                        "source": "Ars Technica",
+                        "site": "arstechnica.com"
+                    })
         except Exception:
             pass
-        cache["news_t"] = now
 
-    # AI news with rich context: every 2 hours (or immediately if cached items lack summaries)
-    needs_ai = (now - cache.get("ai_t", 0) > 7200 or
+        # Source 2: TechCrunch
+        try:
+            req = urllib.request.Request("https://techcrunch.com/feed/",
+                                         headers={"User-Agent": "Mozilla/5.0 (compatible; EnvMonitor/1.0)"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                root = ET.fromstring(r.read())
+            for item in root.iter("item"):
+                t = (item.findtext("title") or "").strip()
+                link = (item.findtext("link") or "").strip()
+                desc = strip_html(item.findtext("description") or "")
+                if t and link:
+                    tech_items.append({
+                        "title": t,
+                        "url": link,
+                        "summary": desc[:350],
+                        "source": "TechCrunch",
+                        "site": "techcrunch.com"
+                    })
+        except Exception:
+            pass
+
+        if tech_items:
+            ars = [it for it in tech_items if it["source"] == "Ars Technica"]
+            tc = [it for it in tech_items if it["source"] == "TechCrunch"]
+            mixed = []
+            for i in range(max(len(ars), len(tc))):
+                if i < len(ars):
+                    mixed.append(ars[i])
+                if i < len(tc):
+                    mixed.append(tc[i])
+            cache["tech"] = mixed[:12]
+            cache["news_t"] = now
+            print(">>> Fetched {} tech news items with context".format(len(cache["tech"])), flush=True)
+        else:
+            cache["news_t"] = now - 3300
+
+    # AI news with rich context: every 1 hour (or immediately if cached items lack summaries)
+    needs_ai = (now - cache.get("ai_t", 0) > 3600 or
                 not cache.get("ai_news") or
                 not any(item.get("summary") for item in cache.get("ai_news", [])))
     if needs_ai:
@@ -540,7 +605,7 @@ def update_net(cache):
             pass
 
         # Source 2: VentureBeat AI (frontier releases and enterprise updates)
-        if len(ai_items) < 6:
+        if len(ai_items) < 12:
             try:
                 req = urllib.request.Request("https://venturebeat.com/category/ai/feed/",
                                              headers={"User-Agent": "Mozilla/5.0 (compatible; EnvMonitor/1.0)"})
@@ -562,9 +627,11 @@ def update_net(cache):
                 pass
 
         if ai_items:
-            cache["ai_news"] = ai_items[:6]
+            cache["ai_news"] = ai_items[:12]
+            cache["ai_t"] = now
             print(">>> Fetched {} AI news items with context".format(len(ai_items)), flush=True)
-        cache["ai_t"] = now
+        else:
+            cache["ai_t"] = now - 3300
 
 # ---------- right-side blocks ----------
 RX0, RX1 = 540, 1004            # right column edges
@@ -664,7 +731,7 @@ def block_weather(img, d, w, air=None):
         d.text((RX0, 520), "No weather yet", font=F_LBL, fill=0)
     else:
         # top row: icon + temperature + conditions | details column
-        icon = weather_icon(w.get("code"))
+        icon = weather_icon(w.get("code"), night=is_night_time(w))
         if icon:
             draw_icon(img, icon[0], RX0 + 52, 534, icon[1], box=104)
         d.text((RX0 + 118, 480), deg(w.get("temp")), font=F_BIG, fill=0)
@@ -868,31 +935,47 @@ def render_tech_screen(img, d, tech, now):
         text_center(d, W // 2, H // 2, "Fetching top stories…", F_TXT, fill=80)
         return
 
-    # Top 3 stories with generous spacing
-    cards = tech[:3]
+    # Paginate stories so they rotate every 60 seconds (showing all stories over time)
+    per_page = 3
+    pages = max(1, (len(tech) + per_page - 1) // per_page)
+    page = int(now // 60) % pages
+    start = page * per_page
+    cards = tech[start : start + per_page]
     y_starts = [96, 304, 512]
 
     for idx, item in enumerate(cards):
+        story_idx = start + idx + 1
         y0 = y_starts[idx]
-        hn_fallback = "https://news.ycombinator.com/item?id={}".format(item.get("id")) if item.get("id") else "https://news.ycombinator.com"
-        url = item.get("url") or item.get("hn_url") or hn_fallback
+        url = item.get("url", "https://arstechnica.com")
 
-        # Story text on the left (x = 40 to 810)
-        pts = item.get("points", 0)
-        site = item.get("site", "news.ycombinator.com")
-        meta = "#{}  ·  {}  ·  {} pt{}".format(idx + 1, site, pts, "" if pts == 1 else "s")
-        if item.get("comments") is not None:
-            meta += "  ·  {} comment{}".format(item["comments"], "" if item["comments"] == 1 else "s")
-        d.text((40, y0 + 10), meta, font=font(True, 24), fill=60)
+        # Source / rank
+        source = item.get("source") or item.get("site", "Tech News")
+        pts = item.get("points")
+        meta = "#{}  ·  {}".format(story_idx, source)
+        if pts:
+            meta += "  ·  {} pt{}".format(pts, "" if pts == 1 else "s")
+        d.text((40, y0 + 8), meta, font=font(True, 24), fill=60)
 
-        # Headline
-        lines = wrap(d, item["title"], font(True, 32), 760)
-        if len(lines) > 2:
-            lines = [lines[0], fit(d, " ".join(lines[1:]), font(True, 32), 760)]
-        ty = y0 + 46
-        for line in lines:
-            d.text((40, ty), line, font=font(True, 32), fill=0)
-            ty += 40
+        # Headline (bold, 1-2 lines)
+        title_lines = wrap(d, item["title"], font(True, 28), 760)
+        if len(title_lines) > 2:
+            title_lines = [title_lines[0], fit(d, " ".join(title_lines[1:]), font(True, 28), 760)]
+        ty = y0 + 38
+        for line in title_lines:
+            d.text((40, ty), line, font=font(True, 28), fill=0)
+            ty += 34
+
+        # Context / Summary paragraph (2-3 lines of key takeaways)
+        summary = item.get("summary", "")
+        if summary:
+            summary_lines = wrap(d, summary, font(False, 23), 760)
+            max_lines = 4 - len(title_lines)
+            if len(summary_lines) > max_lines:
+                summary_lines = summary_lines[:max_lines-1] + [fit(d, " ".join(summary_lines[max_lines-1:]), font(False, 23), 760)]
+            sy = ty + 6
+            for line in summary_lines:
+                d.text((40, sy), line, font=font(False, 23), fill=40)
+                sy += 28
 
         # 150x150 QR code on the right (x = 834 to 984)
         qr_img = make_qr(url, size=150)
@@ -920,16 +1003,21 @@ def render_ai_screen(img, d, cache, now):
         text_center(d, W // 2, H // 2, "Fetching AI news & context…", F_TXT, fill=80)
         return
 
-    # 3 major AI stories with rich context paragraphs and QR codes on the right
-    cards = ai_news[:3]
+    # Paginate stories so they rotate every 60 seconds (showing all stories over time)
+    per_page = 3
+    pages = max(1, (len(ai_news) + per_page - 1) // per_page)
+    page = int(now // 60) % pages
+    start = page * per_page
+    cards = ai_news[start : start + per_page]
     y_starts = [96, 304, 512]
 
     for idx, item in enumerate(cards):
+        story_idx = start + idx + 1
         y0 = y_starts[idx]
         url = item.get("url", "https://arstechnica.com/ai/")
 
         # Source / rank
-        meta = "#{}  ·  {}".format(idx + 1, item.get("source", "AI News"))
+        meta = "#{}  ·  {}".format(story_idx, item.get("source", "AI News"))
         d.text((40, y0 + 8), meta, font=font(True, 24), fill=60)
 
         # Headline (bold, 1-2 lines)
